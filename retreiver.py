@@ -1,20 +1,22 @@
 from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
+import psycopg2
+from psycopg2.extras import execute_values
 
-# Load the model
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Example document embeddings
-docs = ["Document 1 text", "Document 2 text"]
-doc_embeddings = model.encode(docs)
+def encode_and_store_documents(documents):
+    conn = psycopg2.connect("dbname=document_retrieval user=your_username password=your_password")
+    cur = conn.cursor()
 
-# Initialize the FAISS index
-index = faiss.IndexFlatL2(doc_embeddings.shape[1])
-index.add(np.array(doc_embeddings).astype(np.float32))
+    encodings = model.encode(documents)
+    
+    data = [(doc, encoding.tolist()) for doc, encoding in zip(documents, encodings)]
+    
+    execute_values(cur, 
+                   "INSERT INTO documents (content, embedding) VALUES %s",
+                   data,
+                   template="(%s, %s::vector)")
 
-# Function to search for documents
-def search(query, top_k=5):
-    query_embedding = model.encode([query])
-    distances, indices = index.search(np.array(query_embedding).astype(np.float32), top_k)
-    return indices, distances
+    conn.commit()
+    cur.close()
+    conn.close()
